@@ -1,6 +1,14 @@
 pipeline {
     agent any
 
+    tools {
+        maven 'maven-3.9.9'
+    }
+
+    environment {
+        MAVEN_OPTS = '-Dmaven.repo.local=.m2/repository'
+    }
+
     stages {
         stage('Checkout Code') {
             steps {
@@ -10,29 +18,22 @@ pipeline {
 
         stage('Compile & Package Microservices') {
             steps {
-                sh '''
-                    docker run --rm \
-                      -v "${WORKSPACE}":/usr/src/app \
-                      -v jenkins-maven-cache:/root/.m2 \
-                      -w /usr/src/app \
-                      maven:3.9.6-eclipse-temurin-17 \
-                      bash -c "
-                        cd config-server && mvn clean package -DskipTests && cd .. && \
-                        cd service-registry && mvn clean package -DskipTests && cd .. && \
-                        cd zipkin-server && mvn clean package -DskipTests && cd .. && \
-                        api-gateway && mvn clean package -DskipTests && cd .. && \
-                        cd question-service && mvn clean package -DskipTests && cd .. && \
-                        cd quiz-service && mvn clean package -DskipTests
-                      "
-                '''
+                dir('config-server') { sh 'mvn clean package -DskipTests' }
+                dir('service-registry') { sh 'mvn clean package -DskipTests' }
+                dir('zipkin-server') { sh 'mvn clean package -DskipTests' }
+                dir('api-gateway') { sh 'mvn clean package -DskipTests' }
+                dir('question-service') { sh 'mvn clean package -DskipTests' }
+                dir('quiz-service') { sh 'mvn clean package -DskipTests' }
             }
         }
 
         stage('Deploy Infrastructure & Microservices') {
             steps {
                 dir('infra') {
-                    sh 'docker compose down'
-                    sh 'docker compose up --build -d'
+                    withDockerContainer(image: 'docker:dind', args: '-v /var/run/docker.sock:/var/run/docker.sock') {
+                        sh 'docker compose down || true'
+                        sh 'docker compose up --build -d'
+                    }
                 }
             }
         }
